@@ -23,6 +23,7 @@ import com.hazelcast.hibernate.entity.DummyProperty;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
+import org.hibernate.Query;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
 import org.hibernate.cfg.Environment;
@@ -100,6 +101,48 @@ public class LocalRegionFactoryDefaultTest extends RegionFactoryDefaultTest {
         assertEquals(count, stats.getSecondLevelCacheHitCount());
         // collection cache miss
         assertEquals(count, stats.getSecondLevelCacheMissCount());
+        stats.logSummary();
+    }
+
+    @Test
+    public void testDeleteEntityWithHql() {
+        final int count = 100;
+        final int childCount = 3;
+        insertDummyEntities(count, childCount);
+        List<DummyEntity> list = new ArrayList<DummyEntity>(count);
+        Statistics stats = sf.getStatistics();
+        Session session = sf.openSession();
+        try {
+            for (int i = 0; i < count; i++) {
+                DummyEntity e = (DummyEntity) session.get(DummyEntity.class, (long) i);
+                list.add(e);
+            }
+        } finally {
+            session.close();
+        }
+        //Check number of entities in cache before deletion
+        assertEquals(100, stats.getSecondLevelCacheStatistics(CACHE_ENTITY).getElementCountInMemory());
+
+        session = sf.openSession();
+        Transaction tx2 = session.beginTransaction();
+        try {
+            for (DummyEntity dummy : list) {
+                String hql = "DELETE FROM DummyEntity "  +
+                        "WHERE id = :id";
+                Query query = session.createQuery(hql);
+                query.setParameter("id", dummy.getId());
+                query.executeUpdate();
+            }
+            tx2.commit();
+        } catch (Exception e) {
+            tx2.rollback();
+            e.printStackTrace();
+        } finally {
+            session.close();
+        }
+
+        //Check number of entities in cache after deletion
+        assertEquals(0, stats.getSecondLevelCacheStatistics(CACHE_ENTITY).getElementCountInMemory());
         stats.logSummary();
     }
 
